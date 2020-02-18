@@ -8,13 +8,93 @@ output: html_document
 ```{r setup, include=FALSE}
 require(knitr)
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
-library(tidyverse)
+library(pacman)
+p_load(DHARMa, tidyverse, lmerTest)
 ggplot2::theme_set(theme_bw())
 ```
 
 ```{r load data}
-Samples <- read_csv("Exported_EyeLink_data/Samples_merged.csv") %>% 
+Samples <- read_csv("Exported_EyeLink_data/Samples_merged.csv", col_types = cols(
+  ParticipantID = col_character(),
+  ParticipantGender = col_character(),
+  EyeTracked = col_character(),
+  Task = col_character(),
+  SearchOrder = col_double(),
+  ForagingType = col_character(),
+  Trial = col_double(),
+  Stimulus = col_character(),
+  Video = col_character(),
+  Time = col_double(),
+  GazeX = col_double(),
+  GazeY = col_double(),
+  PupilSize = col_double(),
+  FixationNo = col_double(),
+  Fix_StartTime = col_double(),
+  Fix_EndTime = col_double(),
+  Fix_Duration = col_double(),
+  Fix_MeanX = col_double(),
+  Fix_MeanY = col_double(),
+  Fix_MeanPupilSize = col_double(),
+  SaccadeNo = col_double(),
+  Sac_StartTime = col_double(),
+  Sac_EndTime = col_double(),
+  Sac_Duration = col_double(),
+  Sac_StartX = col_double(),
+  Sac_StartY = col_double(),
+  Sac_EndX = col_double(),
+  Sac_EndY = col_double(),
+  Sac_PeakVelocity = col_double(),
+  Sac_MeanVelocity = col_double(),
+  Sac_Blink = col_logical(),
+  Sac_Direction = col_character(),
+  Sac_Amplitude = col_double()
+)) %>% 
   mutate(GazeY = 1051-GazeY, Fix_MeanY = 1051-Fix_MeanY) %>% 
   filter(Time<=41202)
+```
+
+```{r}
+# Saccade DF
+Sac <- Samples[!is.na(Samples$Sac_Amplitude),] %>% 
+  filter(Task == "Foraging") %>% 
+  group_by(ParticipantID, Trial, SaccadeNo, Stimulus) %>% 
+  dplyr::summarise(Sac_Duration = mean(Sac_Duration, na.rm = T),
+                   Sac_Amplitude = mean(Sac_Amplitude),
+                   Task = Task[1],
+                   ParticipantGender = ParticipantGender[1],
+                   Stim = Stimulus[1],
+                   ForagingType = ForagingType[1])
+
+# Making model with log-transformation (the data is not gaussian)
+mlog <- glmer(Sac_Amplitude ~ 1 + ForagingType + (1 + ForagingType|ParticipantID) + (1 + ForagingType|Stim), Sac, family = gaussian(link = log))
+
+# Making model without the log-transformation
+mgaus <- lmer(Sac_Amplitude ~ 1 + ForagingType + (1 + ForagingType|ParticipantID) + (1 + ForagingType|Stim), Sac)
+
+# Plotting the models (to check residuals against actual data??)
+# Residual plots. The line = our model. Skewed = skyder over. Og skewednessen er ikke ens = heteroscedasticity er violated. Some assumptions are violated.
+plot(mlog)
+
+plot(mgaus)
+
+# Predicting from the models
+pmlog <- predict(mlog)
+
+pmgaus <- predict(mgaus)
+
+# Plotting
+plot(density(pmlog)) # Prediction
+
+plot(density(pmgaus)) # Prediction (bad - it has predicted it to be gaussian)
+
+plot(density(Sac$Sac_Amplitude)) # Actual data
+
+# Bad predictions
+
+# Abs = absolutte tal = ingen ladning -1 = +1.
+summary(abs(pmgaus-Sac$SaccadeNo))
+
+summary(abs(pmlog-Sac$SaccadeNo))
+
 ```
 
